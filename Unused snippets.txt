@@ -1,0 +1,12 @@
+            // 给w:pPr添加垂直居中
+            let ppr = p.Xml.XPathSelectElement("w:pPr", nsManager)
+            let w = ret.Name.NamespaceName
+            let vCenter = XElement(XName.Get("textAlignment", w), XAttribute(XName.Get("val", w), "center"))
+            ppr.Add(vCenter)
+            
+            printfn "%A %O" (p.Xml.ToString().Contains("textAlignment")) p.Xml
+
+            
+
+            
+            Pause()
