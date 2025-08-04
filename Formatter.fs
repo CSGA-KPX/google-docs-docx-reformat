@@ -3,6 +3,7 @@
 open System
 open System.Collections.Generic
 open System.IO
+open System.IO.Compression
 open System.Reflection
 open System.Xml
 open System.Xml.Linq
@@ -75,12 +76,57 @@ type DocumentReformattingOption() =
     member val FontSizeAdjust = 0.0 with get, set
     member val FontFamilyAscii = "Arial" with get, set
     member val FontFamilyAsia = "宋体" with get, set
+    member val RemoveEmbeddedFonts = true with get, set
 
 
 let format (docFile: string) (formatting: DocumentReformattingOption) (savePath: string) =
     let fileData = File.ReadAllBytes(docFile)
     use ms = new MemoryStream()
     ms.Write(fileData)
+
+    // 剔除Google自带的字体文件
+    let removeFonts () =
+        use archive = new ZipArchive(ms, ZipArchiveMode.Update, true)
+
+        let ftxPath = "word/fontTable.xml"
+        let fontTable = archive.GetEntry(ftxPath)
+        use ftxStream = fontTable.Open()
+
+        let newXmlData =
+            let xml = XDocument.Load(ftxStream)
+
+            let fontElements =
+                xml.XPathSelectElements("w:fonts/w:font[contains(@w:name, 'Google')]", nsManager)
+                |> Seq.toArray
+
+            for fontElement in fontElements do
+                printfn $"移除字体定义：{fontElement.ToString()}"
+                fontElement.Remove()
+
+            use out = new MemoryStream()
+            let xws = XmlWriterSettings(Indent = true, Encoding = Text.Encoding.UTF8)
+            use xw = XmlWriter.Create(out, xws)
+            xml.Save(xw)
+            xw.Flush()
+            out.ToArray()
+
+        ftxStream.Position <- 0L
+        ftxStream.SetLength(newXmlData.Length)
+
+        use sw = new BinaryWriter(ftxStream)
+        sw.Write(newXmlData)
+        sw.Flush()
+
+        for e in archive.Entries |> Seq.toArray do
+            if e.FullName.Contains("word/fonts/") then
+                printfn $"移除字体文件：{e.FullName}"
+                e.Delete()
+
+    if formatting.RemoveEmbeddedFonts then
+        removeFonts ()
+
+    File.WriteAllBytes("test.zip", ms.ToArray())
+
     use doc = DocX.Load(ms)
 
     /// 样式库

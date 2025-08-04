@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "google-docs-docx-reformat": {
+      "commandName": "Project",
+      "commandLineArgs": "../../../sample/肾上腺衰老：标志与后果_.docx"
+    }
+  }
+}
