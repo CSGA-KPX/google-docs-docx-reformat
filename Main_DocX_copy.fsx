@@ -8,27 +8,30 @@ open System.Xml
 open System.Xml.Linq
 open System.Xml.XPath
 
-open Xceed
 open Xceed.Document.NET
 open Xceed.Words.NET
 
 
+module Debug =
+    let printPublicProperties (obj: obj) =
+        let objType = obj.GetType()
+
+        let properties =
+            objType.GetProperties(BindingFlags.Public ||| BindingFlags.Instance)
+
+        for prop in properties do
+            let value = prop.GetValue(obj, null)
+            printfn "Property: %s, Value: %A" prop.Name value
+
+    let inline Pause () =
+        Console.WriteLine("回车继续")
+        Console.ReadLine() |> ignore
+
+let inline centiMeterToPoints (cm: float32) = cm * 28.3464566929f
+let inline lineSpacingConvert (lh: float32) = lh * 240.0f / 20.0f
+
 let nsManager = XmlNamespaceManager(NameTable())
 nsManager.AddNamespace("w", "http://schemas.openxmlformats.org/wordprocessingml/2006/main")
-
-let printPublicProperties (obj: obj) =
-    let objType = obj.GetType()
-
-    let properties =
-        objType.GetProperties(BindingFlags.Public ||| BindingFlags.Instance)
-
-    for prop in properties do
-        let value = prop.GetValue(obj, null)
-        printfn "Property: %s, Value: %A" prop.Name value
-
-let inline Pause () =
-    Console.WriteLine("回车继续")
-    Console.ReadLine() |> ignore
 
 let doc =
     let testFile = "sample/肾上腺衰老：标志与后果_.docx"
@@ -37,13 +40,17 @@ let doc =
     ms.Write(fileData)
     DocX.Load(ms)
 
-let inline centiMeterToPoints (cm: float32) = cm * 28.3464566929f
-
 doc.MarginTop <- centiMeterToPoints 1.2f
 doc.MarginBottom <- centiMeterToPoints 1.2f
 doc.MarginLeft <- centiMeterToPoints 1.7f
 doc.MarginRight <- centiMeterToPoints 0.8f
 doc.MirrorMargins <- true
+
+if isNull (doc.Footers.First) then
+    doc.AddFooters()
+    doc.MarginFooter <- centiMeterToPoints 0.5f
+    let p = doc.Footers.Odd.InsertParagraph("内容由AI生成，内容仅供参考，请仔细甄别")
+    p.Alignment <- Alignment.center
 
 let styleDoc =
     [ for f in doc.ParagraphFormattings do
@@ -116,9 +123,6 @@ let changeStylesDirty (doc: DocX) =
             | :? XDocument as xdoc -> xdoc
             | _ -> failwithf "字段类型不是 XDocument"
 
-    let nsManager = XmlNamespaceManager(NameTable())
-    nsManager.AddNamespace("w", "http://schemas.openxmlformats.org/wordprocessingml/2006/main")
-
     // Dirty-hack 重写默认字体
     // Xceed.DocX不支持多语言字体
     let ret2 = styles.XPathSelectElements("//w:rFonts", nsManager)
@@ -145,20 +149,18 @@ let changeStylesDirty (doc: DocX) =
 
 changeStylesDirty (doc)
 
-let inline lineSpacingConvert (lh: float32) = lh * 240.0f / 20.0f
-
+// 所有表格居中
 for t in doc.Tables |> Seq.toArray do
-    // 所有表格尽量居中
     t.Alignment <- Alignment.center
 
 for p in doc.Paragraphs |> Seq.toArray do
-
+    // 删除空行，Google Docs常见
     if String.IsNullOrEmpty(p.Text) then
         p.Remove(false, RemoveParagraphFlags.None)
     else
-        let ret2 = p.Xml.XPathSelectElements("//w:rFonts", nsManager)
+        let fontElements = p.Xml.XPathSelectElements("//w:rFonts", nsManager)
 
-        for attr in ret2.Attributes() |> Seq.toArray do
+        for attr in fontElements.Attributes() |> Seq.toArray do
             match attr.Name.LocalName with
             | "ascii" -> attr.SetValue("Arial")
             | "eastAsia" -> attr.SetValue("宋体")
@@ -167,7 +169,11 @@ for p in doc.Paragraphs |> Seq.toArray do
             | unk -> printfn $"notmatch attr : {unk}"
 
         if
+            // 给正文文本添加首行缩进
+            //
+            // 正文内容，而不是表格或者文本框里面的
             p.ParentContainer = ContainerType.Body
+            // 而且不能是标题或者列表
             && (not <| (p.StyleId.Contains("Heading") || p.IsListItem))
         then
             p.IndentationFirstLine <-
@@ -176,9 +182,7 @@ for p in doc.Paragraphs |> Seq.toArray do
                 getParagraphFontSize p |> float32
 
         if p.StyleId.Contains("Heading") then
-
-            // 因为找不到让Word垂直居中的办法
-            // 为了避免行距不好看，在前面添加一个空行
+            // 因为找不到让Word垂直居中的办法，手动设置前后间距
             let fontSize = getParagraphFontSize p
             let singleSizeSpacing = fontSize * (1.5 - 0.5) / 2.0 |> float32
 
