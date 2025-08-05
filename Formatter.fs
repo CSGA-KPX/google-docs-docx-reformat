@@ -56,7 +56,8 @@ let private tryGetParagraphFontSize (doc: DocX) (styles: IReadOnlyDictionary<str
             None
 
 type DocumentReformattingOption() =
-
+    member val PageSize = PaperSizes.A4 with get, set
+    member val PagePortrait = true with get, set
     member val PageMarginTopCm = 1.2f with get, set
     member val PageMarginBottomCm = 1.2f with get, set
     member val PageMarginLeftCm = 1.7f with get, set
@@ -125,8 +126,6 @@ let format (docFile: string) (formatting: DocumentReformattingOption) (savePath:
     if formatting.RemoveEmbeddedFonts then
         removeFonts ()
 
-    File.WriteAllBytes("test.zip", ms.ToArray())
-
     use doc = DocX.Load(ms)
 
     /// 样式库
@@ -134,6 +133,16 @@ let format (docFile: string) (formatting: DocumentReformattingOption) (savePath:
         [ for f in doc.ParagraphFormattings do
               f.StyleId, f ]
         |> readOnlyDict
+
+    // 页面大小和方向
+    doc.PageLayout.Orientation <- 
+        if formatting.PagePortrait then
+            Orientation.Portrait
+        else
+            Orientation.Landscape
+
+    doc.PageHeight <- float32 formatting.PageSize.HeightPt
+    doc.PageWidth <- float32 formatting.PageSize.WidthPt
 
     // 调整页边距
     doc.MarginTop <- centiMeterToPoints formatting.PageMarginTopCm
