@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <Compile Include="Debug.fs" />
+    <Compile Include="PaperSizes.fs" />
     <Compile Include="Formatter.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

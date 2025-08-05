@@ -55,8 +55,32 @@ let private tryGetParagraphFontSize (doc: DocX) (styles: IReadOnlyDictionary<str
         else
             None
 
+let private pageNumberParaElement =
+    let w = nsManager.LookupNamespace("w")
+
+    XElement(
+        XName.Get("p", w),
+        //XAttribute(XName.Get("rsidR", w), "008D2BFB"),
+        //XAttribute(XName.Get("rsidRDefault", w), "008D2BFB"),
+        XElement(
+            XName.Get("pPr", w),
+            XElement(XName.Get("pStyle", w), XAttribute(XName.Get("val", w), "footer")),
+            XElement(XName.Get("jc", w), XAttribute(XName.Get("val", w), "center"))
+        ),
+        XElement(
+            XName.Get("fldSimple", w),
+            XAttribute(XName.Get("instr", w), " PAGE \\* MERGEFORMAT"),
+            XElement(
+                XName.Get("r", w),
+                XElement(XName.Get("rPr", w), XElement(XName.Get("noProof", w))),
+                XElement(XName.Get("t", w), "1")
+            )
+        )
+    )
+
 type DocumentReformattingOption() =
     member val PageSize = PaperSizes.A4 with get, set
+    member val PageNumber = true with get, set
     member val PagePortrait = true with get, set
     member val PageMarginTopCm = 1.2f with get, set
     member val PageMarginBottomCm = 1.2f with get, set
@@ -135,7 +159,7 @@ let format (docFile: string) (formatting: DocumentReformattingOption) (savePath:
         |> readOnlyDict
 
     // 页面大小和方向
-    doc.PageLayout.Orientation <- 
+    doc.PageLayout.Orientation <-
         if formatting.PagePortrait then
             Orientation.Portrait
         else
@@ -154,6 +178,11 @@ let format (docFile: string) (formatting: DocumentReformattingOption) (savePath:
     // 页眉
     if isNull (doc.Headers.First) && formatting.PageHeader.IsSome then
         doc.AddHeaders()
+
+        // 清空预设
+        for p in doc.Headers.Odd.Paragraphs |> Seq.toArray do
+            doc.Headers.Odd.RemoveParagraph(p) |> ignore
+
         doc.MarginHeader <- centiMeterToPoints formatting.PageHeaderMargin
         let p = doc.Headers.Odd.InsertParagraph(formatting.PageHeader.Value)
         p.Alignment <- Alignment.center
@@ -162,8 +191,17 @@ let format (docFile: string) (formatting: DocumentReformattingOption) (savePath:
     if isNull (doc.Footers.First) && formatting.PageFooter.IsSome then
         doc.AddFooters()
         doc.MarginFooter <- centiMeterToPoints formatting.PageFooterMargin
+        
+        // 清空预设
+        for p in doc.Footers.Odd.Paragraphs |> Seq.toArray do
+            doc.Footers.Odd.RemoveParagraph(p) |> ignore
+
         let p = doc.Footers.Odd.InsertParagraph(formatting.PageFooter.Value)
         p.Alignment <- Alignment.center
+
+        if formatting.PageNumber then
+            // 重置并且合并到页码中
+            doc.Footers.Odd.Xml.AddFirst(pageNumberParaElement)
 
     // 文档网格
     // 如果不设置的话，文本不会垂直居中，排版会比较奇怪
