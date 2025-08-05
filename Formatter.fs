@@ -19,6 +19,7 @@ let inline private lineSpacingConvert (lh: float32) = lh * 240.0f / 20.0f
 let private nsManager =
     let ns = XmlNamespaceManager(NameTable())
     ns.AddNamespace("w", "http://schemas.openxmlformats.org/wordprocessingml/2006/main")
+    ns.AddNamespace("xml", "http://www.w3.org/XML/1998/namespace")
     ns
 
 let private tryGetParagraphFontSize (doc: DocX) (styles: IReadOnlyDictionary<string, Formatting>) (p: Paragraph) =
@@ -75,6 +76,87 @@ let private pageNumberParaElement =
                 XElement(XName.Get("rPr", w), XElement(XName.Get("noProof", w))),
                 XElement(XName.Get("t", w), "1")
             )
+        )
+    )
+
+let private columnedFooterElement (left: string option) (middle: string option) =
+    let w = nsManager.LookupNamespace("w")
+    let xml = nsManager.LookupNamespace("xml")
+    let inline wn name = XName.Get(name, w)
+
+    let left = left |> Option.defaultValue String.Empty
+    let middle = middle |> Option.defaultValue String.Empty
+
+    XElement(
+        wn "p",
+        XElement(
+            wn "pPr",
+            XElement(wn "pStyle", XAttribute(wn "val", "footer")),
+            XElement(wn "rPr", XElement(wn "rFonts", XAttribute(wn "hint", "eastAsia")))
+        ),
+        XElement(wn "r", XElement(wn "t", left)),
+        XElement(
+            wn "r",
+            XElement(
+                wn "ptab",
+                XAttribute(wn "relativeTo", "margin"),
+                XAttribute(wn "alignment", "center"),
+                XAttribute(wn "leader", "none")
+            )
+        ),
+        XElement(wn "r", XElement(wn "t", middle)),
+        XElement(
+            wn "r",
+            XElement(
+                wn "ptab",
+                XAttribute(wn "relativeTo", "margin"),
+                XAttribute(wn "alignment", "right"),
+                XAttribute(wn "leader", "none")
+            )
+        ),
+        XElement(wn "r", XElement(wn "t", XAttribute(XName.Get("space", xml), "preserve"), "")),
+        XElement(
+            wn "r",
+            XElement(wn "rPr", XElement(wn "b"), XElement(wn "bCs")),
+            XElement(wn "fldChar", XAttribute(wn "fldCharType", "begin"))
+        ),
+        XElement(
+            wn "r",
+            XElement(wn "rPr", XElement(wn "b"), XElement(wn "bCs")),
+            XElement(wn "instrText", "PAGE \\* Arabic \\* MERGEFORMAT")
+        ),
+        XElement(
+            wn "r",
+            XElement(wn "rPr", XElement(wn "b"), XElement(wn "bCs")),
+            XElement(wn "fldChar", XAttribute(wn "fldCharType", "separate"))
+        ),
+        XElement(wn "r", XElement(wn "rPr", XElement(wn "b"), XElement(wn "bCs")), XElement(wn "t", "1")),
+        XElement(
+            wn "r",
+            XElement(wn "rPr", XElement(wn "b"), XElement(wn "bCs")),
+            XElement(wn "fldChar", XAttribute(wn "fldCharType", "end"))
+        ),
+        XElement(wn "r", XElement(wn "t", XAttribute(XName.Get("space", xml), "preserve"), " / ")),
+        XElement(
+            wn "r",
+            XElement(wn "rPr", XElement(wn "b"), XElement(wn "bCs")),
+            XElement(wn "fldChar", XAttribute(wn "fldCharType", "begin"))
+        ),
+        XElement(
+            wn "r",
+            XElement(wn "rPr", XElement(wn "b"), XElement(wn "bCs")),
+            XElement(wn "instrText", "NUMPAGES \\* Arabic \\* MERGEFORMAT")
+        ),
+        XElement(
+            wn "r",
+            XElement(wn "rPr", XElement(wn "b"), XElement(wn "bCs")),
+            XElement(wn "fldChar", XAttribute(wn "fldCharType", "separate"))
+        ),
+        XElement(wn "r", XElement(wn "rPr", XElement(wn "b"), XElement(wn "bCs")), XElement(wn "t", "2")),
+        XElement(
+            wn "r",
+            XElement(wn "rPr", XElement(wn "b"), XElement(wn "bCs")),
+            XElement(wn "fldChar", XAttribute(wn "fldCharType", "end"))
         )
     )
 
@@ -191,17 +273,17 @@ let format (docFile: string) (formatting: DocumentReformattingOption) (savePath:
     if isNull (doc.Footers.First) && formatting.PageFooter.IsSome then
         doc.AddFooters()
         doc.MarginFooter <- centiMeterToPoints formatting.PageFooterMargin
-        
+
         // 清空预设
         for p in doc.Footers.Odd.Paragraphs |> Seq.toArray do
             doc.Footers.Odd.RemoveParagraph(p) |> ignore
 
-        let p = doc.Footers.Odd.InsertParagraph(formatting.PageFooter.Value)
-        p.Alignment <- Alignment.center
-
         if formatting.PageNumber then
-            // 重置并且合并到页码中
-            doc.Footers.Odd.Xml.AddFirst(pageNumberParaElement)
+            let element = columnedFooterElement None formatting.PageFooter
+            doc.Footers.Odd.Xml.AddFirst(element)
+        else
+            let p = doc.Footers.Odd.InsertParagraph(formatting.PageFooter.Value)
+            p.Alignment <- Alignment.center
 
     // 文档网格
     // 如果不设置的话，文本不会垂直居中，排版会比较奇怪
