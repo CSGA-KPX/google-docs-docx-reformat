@@ -4,6 +4,7 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>google_docs_docx_reformat</RootNamespace>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>  
   </PropertyGroup>
 
   <ItemGroup>
